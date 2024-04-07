@@ -1,0 +1,170 @@
+#!/bin/sh /etc/rc.common
+
+START=99
+STOP=99
+
+USE_PROCD=1
+
+REQUIRED_PACKAGES="kmod-sched ip-full kmod-veth tc-full kmod-netem"
+SCRIPT_URL="https://raw.githubusercontent.com/hudra0/routerperf/master/SimpleHFSCgamerscript.sh"
+HOTPLUG_SCRIPT_URL="https://raw.githubusercontent.com/hudra0/routerperf/master/13-SimpleHFSCGamerScriptHotplug"
+NFT_SCRIPT_URL="https://raw.githubusercontent.com/hudra0/routerperf/master/dscptag.nft"
+
+
+service_triggers() {
+    procd_add_reload_trigger "network"
+    procd_add_reload_trigger "firewall"
+}
+
+install_packages() {
+    # Flag to indicate if opkg update is needed
+    need_update=0
+
+    # Check if any packages are missing
+    for pkg in $REQUIRED_PACKAGES; do
+        if ! opkg list-installed | grep -q "^$pkg "; then
+            echo "$pkg is not installed."
+            need_update=1
+            break
+        fi
+    done
+
+    # Run opkg update if at least one package is missing
+    if [ "$need_update" -eq 1 ]; then
+        echo "Updating opkg list..."
+        opkg update
+    fi
+
+    # Install missing packages
+    for pkg in $REQUIRED_PACKAGES; do
+        if ! opkg list-installed | grep -q "^$pkg "; then
+            echo "Installing $pkg..."
+            opkg install "$pkg" || {
+                echo "Failed to install $pkg."
+                return 1 # Abort if the installation fails
+            }
+        fi
+    done
+}
+
+download_scripts() {
+    [ ! -f /etc/SimpleHFSCgamerscript.sh ] && wget -O /etc/SimpleHFSCgamerscript.sh $SCRIPT_URL && chmod a+x /etc/SimpleHFSCgamerscript.sh
+    [ ! -f /etc/hotplug.d/iface/13-SimpleHFSCGamerScriptHotplug ] && wget -O /etc/hotplug.d/iface/13-SimpleHFSCGamerScriptHotplug $HOTPLUG_SCRIPT_URL
+    
+    # Create the directory for tc-Netem distributions if it does not exist
+    mkdir -p /usr/lib/tc
+
+    # Base URL for the repository
+    DIST_URL="https://raw.githubusercontent.com/dlakelan/routerperf/master/tc-dists"
+
+    # List of files
+    DIST_FILES="experimental.dist normal.dist normmix20-64.dist pareto.dist paretonormal.dist"
+
+    # Iterate through the list and download each file
+    for FILE in $DIST_FILES; do
+        if [ ! -f "/usr/lib/tc/$FILE" ]; then
+            echo "Downloading $FILE..."
+            wget -O "/usr/lib/tc/$FILE" "$DIST_URL/$FILE" || echo "Error downloading $FILE"
+        fi
+    done
+}
+
+start_service() {
+    install_packages
+    download_scripts
+    procd_open_instance
+    procd_set_param command /bin/sh /etc/SimpleHFSCgamerscript.sh
+    procd_set_param stdout 1
+    procd_set_param stderr 1
+    procd_close_instance
+
+    echo "Configuring veth interface..."
+
+    # Configure the veth interface
+    uci set network.veth=interface
+    uci set network.veth.proto='none'
+    uci set network.veth.ifname='lanveth'
+    uci set network.veth.device='lanveth'
+    uci commit network
+
+    echo "Checking for LAN firewall zone and adding veth interface if it exists..."
+
+    # Search for the LAN firewall zone and add the veth interface if it exists
+    LAN_ZONE_NAME=$(uci show firewall | grep -E "firewall.@zone\[.*\].name='lan'" | cut -d'.' -f2)
+    if [ ! -z "$LAN_ZONE_NAME" ]; then
+        uci add_list firewall.$LAN_ZONE_NAME.network='veth'
+        uci commit firewall
+        /etc/init.d/firewall reload
+        echo "veth interface added to LAN firewall zone."
+    else
+        echo "LAN firewall zone does not exist, skipping addition."
+    fi
+
+    echo "Reloading network service..."
+    /etc/init.d/network reload
+    echo "Service successfully started."
+}
+
+stop_service() {
+    echo "Stopping service SimpleHFSCgamerscript..."
+    ## Delete files
+    rm -f /etc/hotplug.d/iface/13-SimpleHFSCGamerScriptHotplug
+    rm -f /usr/share/nftables.d/ruleset-post/dscptag.nft
+
+    echo "Removing veth interface configuration..."
+
+    # Remove the veth interface configuration
+    uci delete network.veth
+    uci commit network
+
+    echo "Checking for LAN firewall zone to remove veth interface..."
+
+    # Search for the LAN firewall zone and remove the veth interface if it exists
+    LAN_ZONE_NAME=$(uci show firewall | grep -E "firewall.@zone\[.*\].name='lan'" | cut -d'.' -f2)
+    if [ ! -z "$LAN_ZONE_NAME" ]; then
+        uci del_list firewall.$LAN_ZONE_NAME.network='veth'
+        uci commit firewall
+        /etc/init.d/firewall reload
+        echo "veth interface removed from LAN firewall zone."
+    else
+        echo "LAN firewall zone does not exist, skipping removal."
+    fi
+
+    ## Delete old qdiscs and veth devices, reload network and firewall services
+
+    ### Interface ###
+    WAN="$(sed '/WAN=/!d; /sed/d; s/WAN=//; s/"//g; s/ //g' /etc/SimpleHFSCgamerscript.sh)"
+    LAN="$(sed '/LAN=/!d; /sed/d; s/LAN=//; s/"//g; s/ //g' /etc/SimpleHFSCgamerscript.sh)"
+
+    ## Delete the old qdiscs created by the script
+    tc qdisc del dev $LAN root > /dev/null 2>&1
+    tc qdisc del dev $WAN root > /dev/null 2>&1
+
+    ## Delete veth devices
+ if
+    ip link show lanveth > /dev/null 2>&1; then
+    ip link set lanveth nomaster
+    ip link set lanveth down
+    ip link set lanbrport down
+    ip link del lanveth
+fi
+
+    nft delete table inet dscptag
+
+    echo "Reloading network service..."
+    /etc/init.d/network reload
+    /etc/init.d/firewall reload
+
+    exit 0
+}
+
+restart() {
+    /etc/init.d/SimpleHFSCgamerscript stop
+    sleep 1 # Ensure all processes have been properly terminated
+    /etc/init.d/SimpleHFSCgamerscript start
+}
+service
+
+reload_service() {
+    restart
+}
