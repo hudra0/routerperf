@@ -11,7 +11,7 @@ DOWNRATE=65000 # Change this to about 80% of your download speed (in kbps)
 OH=40 # Number of bytes of Overhead on your line
 
 ### Veth-specific settings (only adjust if using the Veth setup) ###
-USEVETHDOWN=yes # Set to "yes" to use Veth for downstream traffic shaping
+USEVETHDOWN=no # Set to "yes" to use Veth for downstream traffic shaping
 LANBR=br-lan # LAN bridge interface name, only relevant if USEVETHDOWN is set to "yes"
 
 ### Performance settings ###
