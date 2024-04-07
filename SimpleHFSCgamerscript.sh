@@ -1,29 +1,23 @@
 #!/bin/sh
 
-## "atm" for old-school DSL or change to "DOCSIS" for cable modem, or
-## "other" or anything else, for everything else
+### General settings ###
 
-LINKTYPE="ethernet"
+# "atm" for old-school DSL, "DOCSIS" for cable modem, or "other" for anything else
+LINKTYPE="ethernet" 
+WAN=eth1 # Change this to your WAN device name
+LAN=br-lan # Change to your LAN device if you don't use veth/bridge, leave it alone if you use veth
+UPRATE=18000 # Change this to your kbps upload speed
+DOWNRATE=65000 # Change this to about 80% of your download speed (in kbps)
+OH=40 # Number of bytes of Overhead on your line
 
-USEVETHDOWN=no
-LANBR=br-lan
+### Veth-specific settings (only adjust if using the Veth setup) ###
+USEVETHDOWN=yes # Set to "yes" to use Veth for downstream traffic shaping
+LANBR=br-lan # LAN bridge interface name, only relevant if USEVETHDOWN is set to "yes"
 
-WAN=eth0.2 # change this to your WAN device name
-UPRATE=18000 #change this to your kbps upload speed
-LAN=eth0.1 # change to your LAN device if you don't use veth/bridge,
-	   # leave it alone if you use veth, it will get set in the
-	   # script below
-
-
-DOWNRATE=65000 #change this to about 80% of your download speed (in kbps)
-OH=40 # number of bytes of Overhead on your line (37 is reasonable
-      # starting point, better to be too big than too small) probably
-      # likely values are between 20 and 50
-
-PFIFOMIN=5 ## minimum number of packets in pfifo, 4 to 10 is good guess
-PACKETSIZE=350 # bytes per game packet avg (guess, 250 to 500 is likely) 
-MAXDEL=25 # ms we try to keep max delay below for game packets after
-	  # burst 10-25 is good 1 clock tick at 64Hz is ~16ms
+### Performance settings ###
+PFIFOMIN=5 ## Minimum number of packets in pfifo
+PACKETSIZE=350 # Bytes per game packet avg
+MAXDEL=25 # Ms we try to keep max delay below for game packets after burst
 
 BWMAXRATIO=20 ## prevent ack floods by limiting download to at most
 	      ## upload times this amount... ratio somewhere between
@@ -50,18 +44,7 @@ GAMEDOWN=$((DOWNRATE*15/100+400))
 #GAMEUP=400
 #GAMEDOWN=800
 
-
-DSCPSCRIPT="/usr/share/nftables.d/ruleset-post/dscptag.nft"
-
-if [ ! -f $DSCPSCRIPT ]; then
-    workdir=$(pwd)
-    echo "You do not have the DSCP tagging script, downloading from github"
-    cd /usr/share/nftables.d/ruleset-post/
-    wget https://raw.githubusercontent.com/dlakelan/routerperf/master/dscptag.nft
-    cd $workdir
-fi
-
-
+### Qdisc settings ###
 
 ## Right now there are four possible leaf qdiscs: pfifo, red,
 ## fq_codel, or netem. If you use netem it's so you can intentionally
@@ -87,9 +70,24 @@ if [ $gameqdisc != "fq_codel" -a $gameqdisc != "red" -a $gameqdisc != "pfifo" -a
     gameqdisc="red"
 fi
 
+### Port/IP settings for traffic categorization ###
+UDPBULKPORT="51413"
+TCPBULKPORT="51413,6881-6889"
+VIDCONFPORTS="10000,3478-3479,8801-8802,19302-19309,5938,53"
+REALTIME4="192.168.109.1,192.168.109.5" # example, just add all your game console here
+REALTIME6="fd90::129a" ## example only replace with game console
+LOWPRIOLAN4="192.168.109.2" # example, add your low priority lan machines here
+LOWPRIOLAN6="fd90::129a" ## example, add your low priority lan ipv6 PUBLIC addr here
 
+ACKRATE="300"
 
+DOWNRATE="15000" # kbits/sec ... CHANGE ME
+UPRATE="15000" # kbits/sec ... CHANGE ME
 
+FIRST500MS="937500" # downrate * 500/8
+FIRST10S="18750000" # downrate * 10000/8
+
+#######################
 ## Help the system prioritize your gaming by telling it what is bulk
 ## traffic ... define a list of udp and tcp ports used for bulk
 ## traffic such as torrents. By default we include the transmission
@@ -99,13 +97,167 @@ fi
 
 UDPBULKPT="51413"
 TCPBULKPT="51413,6881:6889"
+######################
 
-
+### Traffic washing settings ###
 WASHDSCPUP="yes"
 WASHDSCPDOWN="yes"
 
-
 ######################### CUSTOMIZATIONS GO ABOVE THIS LINE ###########
+
+
+### dscptag.nft #######################
+
+## Check if the file does not exist
+if [ ! -d "/usr/share/nftables.d/ruleset-post" ]; then
+    mkdir -p "/usr/share/nftables.d/ruleset-post"
+fi
+
+if [ ! -f "/usr/share/nftables.d/ruleset-post/dscptag.nft" ]; then
+    cat << DSCPEOF > "/usr/share/nftables.d/ruleset-post/dscptag.nft"
+
+define udpbulkport = {$UDPBULKPORT}
+define tcpbulkport = {$TCPBULKPORT}
+define vidconfports = {$VIDCONFPORTS}
+define realtime4 = {$REALTIME4}
+define realtime6 = {$REALTIME6}
+define lowpriolan4 = {$LOWPRIOLAN4}
+define lowpriolan6 = {$LOWPRIOLAN6}
+
+define ackrate = $ACKRATE
+
+define downrate = $DOWNRATE
+define uprate = $UPRATE
+
+define first500ms = $FIRST500MS
+define first10s = $FIRST10S
+
+define wan = "$WAN"
+
+
+table inet dscptag # forward declaration so the next command always works
+
+delete table inet dscptag # clear all the rules
+
+table inet dscptag {
+
+    map priomap { type dscp : classid ;
+        elements =  {ef : 1:11, cs5 : 1:11, cs6 : 1:11, cs7 : 1:11,
+                    cs4 : 1:12, af41 : 1:12, af42 : 1:12,
+                    cs2 : 1:14 , cs1 : 1:15, cs0 : 1:13}
+    }
+
+
+    set xfst4ack { typeof ip daddr . ip saddr . tcp dport . tcp sport
+        flags dynamic;
+        timeout 5m
+    }
+    set fast4ack { typeof ip daddr . ip saddr . tcp dport . tcp sport
+        flags dynamic;
+        timeout 5m
+    }
+    set med4ack { typeof ip daddr . ip saddr . tcp dport . tcp sport
+        flags dynamic;
+        timeout 5m
+    }
+    set slow4ack { typeof ip daddr . ip saddr . tcp dport . tcp sport
+        flags dynamic;
+        timeout 5m
+    }
+    set udp_meter4 {typeof ip saddr . ip daddr . udp sport . udp dport
+        flags dynamic;
+        timeout 5m
+    }
+    set udp_meter6 {typeof ip6 saddr . ip6 daddr . udp sport . udp dport
+        flags dynamic;
+        timeout 5m
+    }
+    set slowtcp4 {typeof ip saddr . ip daddr . tcp sport . tcp dport
+        flags dynamic;
+        timeout 5m
+    }
+    set slowtcp6 {typeof ip6 saddr . ip6 daddr . tcp sport . tcp dport
+        flags dynamic;
+        timeout 5m
+    }
+
+    chain drop995 {
+        numgen random mod 1000 < 995 drop
+    }
+    chain drop95 {
+        numgen random mod 100 < 95 drop
+    }
+    chain drop50 {
+        numgen random mod 100 < 50 drop
+    }
+
+
+    chain dscptag {
+        type filter hook forward priority 0; policy accept;
+
+        # wash all the DSCP to begin with ... you can comment this out
+        ip dscp set cs0 counter
+        ip6 dscp set cs0 counter
+
+        ip protocol udp udp sport \$udpbulkport ip dscp set cs1
+        ip6 nexthdr udp udp sport \$udpbulkport ip6 dscp set cs1
+
+        ip protocol udp udp dport \$udpbulkport ip dscp set cs1
+        ip6 nexthdr udp udp dport \$udpbulkport ip6 dscp set cs1
+
+        ip protocol tcp tcp sport \$tcpbulkport ip dscp set cs1
+        ip6 nexthdr tcp tcp sport \$tcpbulkport ip6 dscp set cs1
+        ip protocol tcp tcp dport \$tcpbulkport ip dscp set cs1
+        ip6 nexthdr tcp tcp dport \$tcpbulkport ip6 dscp set cs1
+
+        ## ack limit rate to about 150 pps by decimating the quantity of pure acks being sent
+        ip protocol tcp tcp flags & ack == ack meta length < 100 add @xfst4ack {ip daddr . ip saddr . tcp dport . tcp sport limit rate over 30000/second} jump drop995 
+        ip protocol tcp tcp flags & ack == ack meta length < 100 add @fast4ack {ip daddr . ip saddr . tcp dport . tcp sport limit rate over 3000/second} jump drop95
+        ip protocol tcp tcp flags & ack == ack meta length < 100 add @med4ack {ip daddr . ip saddr . tcp dport . tcp sport limit rate over 300/second} jump drop50
+        ip protocol tcp tcp flags & ack == ack meta length < 100 add @slow4ack {ip daddr . ip saddr . tcp dport . tcp sport limit rate over 300/second} jump drop50
+        ## for almost everyone we won't send more than 150-400 acks/second
+
+        ip protocol udp udp dport \$vidconfports ip dscp set cs4
+        ip6 nexthdr udp udp dport \$vidconfports ip6 dscp set cs4
+
+        ip protocol udp ip daddr \$realtime4 ip dscp set cs5
+        ip protocol udp ip saddr \$realtime4 ip dscp set cs5
+
+        ip6 nexthdr udp ip6 daddr \$realtime6 ip6 dscp set cs5
+        ip6 nexthdr udp ip6 saddr \$realtime6 ip6 dscp set cs5
+
+        ip protocol udp ip daddr \$lowpriolan4 ip dscp set cs2
+        ip protocol udp ip saddr \$lowpriolan4 ip dscp set cs2
+
+        ip6 nexthdr udp ip6 daddr \$lowpriolan6 ip6 dscp set cs2
+        ip6 nexthdr udp ip6 saddr \$lowpriolan6 ip6 dscp set cs2
+
+        #downgrade udp going faster than 450 pps, probably not realtime traffic
+        ip protocol udp ip dscp > cs2 add @udp_meter4 {ip saddr . ip daddr . udp sport . udp dport limit rate over 450/second} counter ip dscp set cs2
+        ip6 nexthdr udp ip6 dscp > cs2 add @udp_meter6 {ip6 saddr . ip6 daddr . udp sport . udp dport limit rate over 450/second} counter ip6 dscp set cs2
+
+        # down prioritize the first 500ms of tcp packets
+        ip protocol tcp ct bytes < \$first500ms ip dscp < cs4 ip dscp set cs2
+
+        # downgrade tcp that has transferred more than 10 seconds worth of packets
+        ip protocol tcp ct bytes > \$first10s ip dscp < cs4 ip dscp set cs1
+
+        ## tcp with less than 150 pps gets upgraded to cs4
+        ip protocol tcp add @slowtcp4 {ip saddr . ip daddr . tcp sport . tcp dport limit rate 150/second burst 150 packets } ip dscp set cs4
+        ip6 nexthdr tcp add @slowtcp6 {ip6 saddr . ip6 daddr . tcp sport . tcp dport limit rate 150/second burst 150 packets} ip6 dscp set cs4
+
+        ## classify for the HFSC queues:
+        meta priority set ip dscp map @priomap
+        meta priority set ip6 dscp map @priomap
+
+        meta oifname \$wan ip dscp set cs0 ## comment out if you don't want to wash dscp upload to internet
+        meta oifname \$wan ip6 dscp set cs0 ## comment out like above
+    }
+}
+DSCPEOF
+fi
+
+
 
 if [ $USEVETHDOWN = "yes" ] ; then
 
