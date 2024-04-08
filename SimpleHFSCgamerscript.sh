@@ -6,8 +6,8 @@
 LINKTYPE="ethernet" 
 WAN=eth1 # Change this to your WAN device name
 LAN=eth0 # Change to your LAN device if you don't use veth/bridge, leave it alone if you use veth
-UPRATE=45000 # Change this to your kbps upload speed
 DOWNRATE=90000 # Change this to about 80% of your download speed (in kbps)
+UPRATE=45000 # Change this to your kbps upload speed
 OH=44 # Number of bytes of Overhead on your line
 
 ######################################## Veth-specific settings (only adjust if using the Veth setup) ######################
