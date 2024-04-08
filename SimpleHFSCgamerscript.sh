@@ -6,9 +6,9 @@
 LINKTYPE="ethernet" 
 WAN=eth1 # Change this to your WAN device name
 LAN=eth0 # Change to your LAN device if you don't use veth/bridge, leave it alone if you use veth
-UPRATE=18000 # Change this to your kbps upload speed
-DOWNRATE=65000 # Change this to about 80% of your download speed (in kbps)
-OH=40 # Number of bytes of Overhead on your line
+UPRATE=45000 # Change this to your kbps upload speed
+DOWNRATE=90000 # Change this to about 80% of your download speed (in kbps)
+OH=44 # Number of bytes of Overhead on your line
 
 ######################################## Veth-specific settings (only adjust if using the Veth setup) ######################
 
@@ -77,18 +77,15 @@ fi
 UDPBULKPORT="51413"
 TCPBULKPORT="51413,6881-6889"
 VIDCONFPORTS="10000,3478-3479,8801-8802,19302-19309,5938,53"
-REALTIME4="192.168.109.1,192.168.109.10" # example, just add all your game console here
+REALTIME4="192.168.1.208" # example, just add all your game console here
 REALTIME6="fd90::129a" ## example only replace with game console
 LOWPRIOLAN4="192.168.109.2" # example, add your low priority lan machines here
 LOWPRIOLAN6="fd90::129a" ## example, add your low priority lan ipv6 PUBLIC addr here
 
 ACKRATE="300"
 
-DOWNRATE="15000" # kbits/sec ... CHANGE ME
-UPRATE="15000" # kbits/sec ... CHANGE ME
-
-FIRST500MS="937500" # downrate * 500/8
-FIRST10S="18750000" # downrate * 10000/8
+FIRST500MS=$((DOWNRATE * 500 / 8)) # downrate * 500/8
+FIRST10S=$((DOWNRATE * 10000 / 8)) # downrate * 10000/8
 
 ###########################################################################################################################
 ## Help the system prioritize your gaming by telling it what is bulk
