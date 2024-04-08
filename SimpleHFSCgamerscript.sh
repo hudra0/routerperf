@@ -1,20 +1,22 @@
 #!/bin/sh
 
-### General settings ###
+######################################## General settings ##################################################################
 
 # "atm" for old-school DSL, "DOCSIS" for cable modem, or "other" for anything else
 LINKTYPE="ethernet" 
 WAN=eth1 # Change this to your WAN device name
-LAN=br-lan # Change to your LAN device if you don't use veth/bridge, leave it alone if you use veth
+LAN=eth0 # Change to your LAN device if you don't use veth/bridge, leave it alone if you use veth
 UPRATE=18000 # Change this to your kbps upload speed
 DOWNRATE=65000 # Change this to about 80% of your download speed (in kbps)
 OH=40 # Number of bytes of Overhead on your line
 
-### Veth-specific settings (only adjust if using the Veth setup) ###
+######################################## Veth-specific settings (only adjust if using the Veth setup) ######################
+
 USEVETHDOWN=no # Set to "yes" to use Veth for downstream traffic shaping
 LANBR=br-lan # LAN bridge interface name, only relevant if USEVETHDOWN is set to "yes"
 
-### Performance settings ###
+######################################## Performance settings ##############################################################
+
 PFIFOMIN=5 ## Minimum number of packets in pfifo
 PACKETSIZE=350 # Bytes per game packet avg
 MAXDEL=25 # Ms we try to keep max delay below for game packets after burst
@@ -44,7 +46,7 @@ GAMEDOWN=$((DOWNRATE*15/100+400))
 #GAMEUP=400
 #GAMEDOWN=800
 
-### Qdisc settings ###
+######################################## Qdisc settings ####################################################################
 
 ## Right now there are four possible leaf qdiscs: pfifo, red,
 ## fq_codel, or netem. If you use netem it's so you can intentionally
@@ -70,11 +72,12 @@ if [ $gameqdisc != "fq_codel" -a $gameqdisc != "red" -a $gameqdisc != "pfifo" -a
     gameqdisc="red"
 fi
 
-### Port/IP settings for traffic categorization ###
+######################################## Port/IP settings for traffic categorization ########################################
+
 UDPBULKPORT="51413"
 TCPBULKPORT="51413,6881-6889"
 VIDCONFPORTS="10000,3478-3479,8801-8802,19302-19309,5938,53"
-REALTIME4="192.168.109.1,192.168.109.5" # example, just add all your game console here
+REALTIME4="192.168.109.1,192.168.109.10" # example, just add all your game console here
 REALTIME6="fd90::129a" ## example only replace with game console
 LOWPRIOLAN4="192.168.109.2" # example, add your low priority lan machines here
 LOWPRIOLAN6="fd90::129a" ## example, add your low priority lan ipv6 PUBLIC addr here
@@ -87,7 +90,7 @@ UPRATE="15000" # kbits/sec ... CHANGE ME
 FIRST500MS="937500" # downrate * 500/8
 FIRST10S="18750000" # downrate * 10000/8
 
-#######################
+###########################################################################################################################
 ## Help the system prioritize your gaming by telling it what is bulk
 ## traffic ... define a list of udp and tcp ports used for bulk
 ## traffic such as torrents. By default we include the transmission
@@ -97,24 +100,23 @@ FIRST10S="18750000" # downrate * 10000/8
 
 UDPBULKPT="51413"
 TCPBULKPT="51413,6881:6889"
-######################
 
-### Traffic washing settings ###
+######################################## Traffic washing settings ########################################################
+
 WASHDSCPUP="yes"
 WASHDSCPDOWN="yes"
 
-######################### CUSTOMIZATIONS GO ABOVE THIS LINE ###########
+######################################## CUSTOMIZATIONS GO ABOVE THIS LINE ###############################################
 
 
-### dscptag.nft #######################
+##################### dscptag.nft #####################
 
-## Check if the file does not exist
+## Check if the folder does not exist
 if [ ! -d "/usr/share/nftables.d/ruleset-post" ]; then
     mkdir -p "/usr/share/nftables.d/ruleset-post"
 fi
 
-if [ ! -f "/usr/share/nftables.d/ruleset-post/dscptag.nft" ]; then
-    cat << DSCPEOF > "/usr/share/nftables.d/ruleset-post/dscptag.nft"
+cat << DSCPEOF > /usr/share/nftables.d/ruleset-post/dscptag.nft
 
 define udpbulkport = {$UDPBULKPORT}
 define tcpbulkport = {$TCPBULKPORT}
@@ -255,8 +257,6 @@ table inet dscptag {
     }
 }
 DSCPEOF
-fi
-
 
 
 if [ $USEVETHDOWN = "yes" ] ; then
@@ -272,7 +272,6 @@ if [ $USEVETHDOWN = "yes" ] ; then
     ip rule add iif $WAN priority 100 table 100
     ip -6 rule add iif $WAN priority 100 table 100
 fi
-
 
 
 cat <<EOF
@@ -473,5 +472,4 @@ if [ "$gameqdisc" = "red" ]; then
 else
    tc -s qdisc
 fi
-
 
