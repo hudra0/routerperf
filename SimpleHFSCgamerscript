@@ -134,9 +134,13 @@ stop_service() {
 
     ## Delete old qdiscs and veth devices, reload network and firewall services
 
-    ### Interface ###
-    WAN="$(sed '/WAN=/!d; /sed/d; s/WAN=//; s/"//g; s/ //g' /etc/SimpleHFSCgamerscript.sh)"
-    LAN="$(sed '/LAN=/!d; /sed/d; s/LAN=//; s/"//g; s/ //g' /etc/SimpleHFSCgamerscript.sh)"
+    USEVETHDOWN=$(sed -n 's/^USEVETHDOWN=\([^#]*\).*/\1/p' /etc/SimpleHFSCgamerscript.sh | tr -d ' ')
+    WAN=$(awk -F'=' '/^WAN=/ {sub(/#.*/,"",$2); gsub(/"| /,"",$2); print $2; exit}' /etc/SimpleHFSCgamerscript.sh)
+    LAN=$(awk -F'=' '/^LAN=/ {sub(/#.*/,"",$2); gsub(/"| /,"",$2); print $2; exit}' /etc/SimpleHFSCgamerscript.sh)
+
+    if [ "$USEVETHDOWN" = "yes" ]; then
+        LAN="lanveth"
+    fi
 
     ## Delete the old qdiscs created by the script
     tc qdisc del dev $LAN root > /dev/null 2>&1
