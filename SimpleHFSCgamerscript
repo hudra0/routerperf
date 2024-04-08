@@ -69,40 +69,43 @@ download_scripts() {
     done
 }
 
+configure_network() {
+    USEVETHDOWN=$(sed -n 's/^USEVETHDOWN=\([^#]*\).*/\1/p' /etc/SimpleHFSCgamerscript.sh | tr -d ' ')
+
+    if [ "$USEVETHDOWN" = "yes" ]; then
+        echo "Configuring veth interface..."
+        
+        # Configure the veth interface
+        uci set network.veth=interface
+        uci set network.veth.proto='none'
+        uci set network.veth.ifname='lanveth'
+        uci set network.veth.device='lanveth'
+        uci commit network
+
+        echo "Checking for LAN firewall zone and adding veth interface if it exists..."
+        
+        # Search for the LAN firewall zone and add the veth interface if it exists
+        LAN_ZONE_NAME=$(uci show firewall | grep ".name='lan'" | cut -d'.' -f2)
+        if [ ! -z "$LAN_ZONE_NAME" ]; then
+            uci add_list firewall.$LAN_ZONE_NAME.network='veth'
+            uci commit firewall
+#            /etc/init.d/firewall reload            
+            echo "veth interface added to LAN firewall zone."
+        else
+            echo "LAN firewall zone does not exist, skipping addition."
+        fi
+        echo "Reloading network service..."
+        /etc/init.d/network reload
+    fi
+    echo "Network configuration successfully completed."
+}
+
 start_service() {
     install_packages
     download_scripts
-    procd_open_instance
-    procd_set_param command /bin/sh /etc/SimpleHFSCgamerscript.sh
-    procd_set_param stdout 1
-    procd_set_param stderr 1
-    procd_close_instance
-
-    echo "Configuring veth interface..."
-
-    # Configure the veth interface
-    uci set network.veth=interface
-    uci set network.veth.proto='none'
-    uci set network.veth.ifname='lanveth'
-    uci set network.veth.device='lanveth'
-    uci commit network
-
-    echo "Checking for LAN firewall zone and adding veth interface if it exists..."
-
-    # Search for the LAN firewall zone and add the veth interface if it exists
-    LAN_ZONE_NAME=$(uci show firewall | grep -E "firewall.@zone\[.*\].name='lan'" | cut -d'.' -f2)
-    if [ ! -z "$LAN_ZONE_NAME" ]; then
-        uci add_list firewall.$LAN_ZONE_NAME.network='veth'
-        uci commit firewall
-        /etc/init.d/firewall reload
-        echo "veth interface added to LAN firewall zone."
-    else
-        echo "LAN firewall zone does not exist, skipping addition."
-    fi
-
-    echo "Reloading network service..."
-    /etc/init.d/network reload
-    echo "Service successfully started."
+    /etc/SimpleHFSCgamerscript.sh    
+    configure_network
+    /etc/init.d/firewall reload     
 }
 
 stop_service() {
@@ -124,7 +127,6 @@ stop_service() {
     if [ ! -z "$LAN_ZONE_NAME" ]; then
         uci del_list firewall.$LAN_ZONE_NAME.network='veth'
         uci commit firewall
-        /etc/init.d/firewall reload
         echo "veth interface removed from LAN firewall zone."
     else
         echo "LAN firewall zone does not exist, skipping removal."
@@ -161,9 +163,8 @@ fi
 restart() {
     /etc/init.d/SimpleHFSCgamerscript stop
     sleep 1 # Ensure all processes have been properly terminated
-    /etc/init.d/SimpleHFSCgamerscript start
+    /etc/init.d/SimpleHFSCgamerscript start    
 }
-service
 
 reload_service() {
     restart
