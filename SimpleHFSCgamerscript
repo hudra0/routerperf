@@ -164,6 +164,15 @@ fi
     exit 0
 }
 
+status_service() {
+    echo "==== Traffic Control (tc) Queues ===="
+    tc -s qdisc
+
+    echo
+    echo "==== Nftables Ruleset: dscptag ===="
+    nft list ruleset | grep 'chain dscptag' -A 100
+}
+
 restart() {
     /etc/init.d/SimpleHFSCgamerscript stop
     sleep 1 # Ensure all processes have been properly terminated
