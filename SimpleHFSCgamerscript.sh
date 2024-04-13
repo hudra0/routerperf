@@ -162,7 +162,7 @@ check_and_update_config() {
     local config_path="/etc/config/hfscscript"
     if [ ! -f "$config_path" ]; then
         echo "Configuration file not found, downloading the latest version..."
-        wget -O $config_path "URL_TO_CONFIGURATION_FILE" || {
+        wget -O $config_path "https://raw.githubusercontent.com/hudra0/routerperf/master/hfscscript" || {
             echo "Error downloading configuration."
             return 1  # Abort on failure
         }
