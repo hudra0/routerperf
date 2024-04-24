@@ -12,14 +12,19 @@ DOWNRATE=90000 # Change this to about 80% of your download speed (in kbps)
 UPRATE=45000 # Change this to your kbps upload speed
 OH=44 # Number of bytes of Overhead on your line
 
+##############################
+# Downstream shaping method
+##############################
+DOWNSHAPING_METHOD="ctinfo" # Options: "veth", "ctinfo", "lan"
+
+## "ctinfo"  Uses connection tracking information to restore DSCP markings on incoming packets
+## "veth" Utilizes a virtual Ethernet pair to control incoming traffic
+## "lan" Applies traffic shaping directly on the LAN interface, (ideal) for environments with a single interface directed towards the LAN. 
 
 ##############################
 # Veth-specific settings (only adjust if using the Veth setup)
 ##############################
-
-USEVETHDOWN=no # Set to "yes" to use Veth for downstream traffic shaping
 LANBR=br-lan # LAN bridge interface name, only relevant if USEVETHDOWN is set to "yes"
-
 
 ##############################
 # Performance settings
@@ -72,7 +77,7 @@ gameqdisc="pfifo"
 # and simplicity in packet delivery.
 
 PFIFOMIN=5 ## Minimum number of packets in pfifo
-PACKETSIZE=350 # Bytes per game packet avg
+PACKETSIZE=450 # Bytes per game packet avg
 MAXDEL=25 # Ms we try to keep max delay below for game packets after burst
 
 ##############################
@@ -130,6 +135,8 @@ ACKRATE="$(($UPRATE * 5 / 100))" # auto moode - or set manual
 FIRST500MS=$((DOWNRATE * 500 / 8)) # downrate * 500/8
 FIRST10S=$((DOWNRATE * 10000 / 8)) # downrate * 10000/8
 
+# Control whether to limit UDP traffic going faster than 450 pps
+UDP_RATE_LIMIT_ENABLED="yes"  # Set to "yes" to enable or "no" to disable
 
 ##############################
 #  Traffic washing settings
@@ -306,6 +313,14 @@ else
     lowpriolan6_rules="# LOWPRIOLAN6 rules disabled, address not defined."
 fi
 
+# Check if UDP rate limiting should be applied
+if [ "$UDP_RATE_LIMIT_ENABLED" = "yes" ]; then
+    udp_rate_limit_rules="\
+ip protocol udp ip dscp > cs2 add @udp_meter4 {ip saddr . ip daddr . udp sport . udp dport limit rate over 450/second} counter ip dscp set cs2 counter
+        ip6 nexthdr udp ip6 dscp > cs2 add @udp_meter6 {ip6 saddr . ip6 daddr . udp sport . udp dport limit rate over 450/second} counter ip6 dscp set cs2 counter"
+else
+    udp_rate_limit_rules="# UDP rate limiting is disabled."
+fi
 
 ##############################
 #       dscptag.nft
@@ -419,6 +434,8 @@ table inet dscptag {
 
         $lowpriolan6_rules
 
+        $udp_rate_limit_rules
+
         #downgrade udp going faster than 450 pps, probably not realtime traffic
         ip protocol udp ip dscp > cs2 add @udp_meter4 {ip saddr . ip daddr . udp sport . udp dport limit rate over 450/second} counter ip dscp set cs2 counter
         ip6 nexthdr udp ip6 dscp > cs2 add @udp_meter6 {ip6 saddr . ip6 daddr . udp sport . udp dport limit rate over 450/second} counter ip6 dscp set cs2 counter
@@ -433,9 +450,15 @@ table inet dscptag {
         ip protocol tcp add @slowtcp4 {ip saddr . ip daddr . tcp sport . tcp dport limit rate 150/second burst 150 packets } ip dscp set cs4 counter
         ip6 nexthdr tcp add @slowtcp6 {ip6 saddr . ip6 daddr . tcp sport . tcp dport limit rate 150/second burst 150 packets} ip6 dscp set cs4 counter
 
+${DYNAMIC_RULES}
+
         ## classify for the HFSC queues:
         meta priority set ip dscp map @priomap counter
         meta priority set ip6 dscp map @priomap counter
+
+        # Store DSCP in conntrack for restoration on ingress
+        ct mark set ip dscp or 128 counter
+        ct mark set ip6 dscp or 128 counter
 
         $(if [ "$WASHDSCPUP" = "yes" ]; then
             echo "meta oifname \$wan ip dscp set cs0"
@@ -443,15 +466,13 @@ table inet dscptag {
           fi
         )
 
-${DYNAMIC_RULES}
-
     }
+    
 }
 DSCPEOF
 
 
-if [ $USEVETHDOWN = "yes" ] ; then
-
+if [ "$DOWNSHAPING_METHOD" = "veth" ]; then
     ip link show lanveth || ip link add lanveth type veth peer name lanbrport
     LAN=lanveth
     ip link set lanveth up
@@ -462,8 +483,22 @@ if [ $USEVETHDOWN = "yes" ] ; then
     ip -6 route add default dev $LAN table 100
     ip rule add iif $WAN priority 100 table 100
     ip -6 rule add iif $WAN priority 100 table 100
+elif [ "$DOWNSHAPING_METHOD" = "ctinfo" ]; then
+    # Set up ingress handle for WAN interface
+    tc qdisc add dev $WAN handle ffff: ingress
+    # Create IFB interface
+    ip link add name ifb-$WAN type ifb
+    ip link set ifb-$WAN up
+    # Redirect ingress traffic from WAN to IFB and restore DSCP from conntrack
+    tc filter add dev $WAN parent ffff: protocol all matchall action ctinfo dscp 63 128 mirred egress redirect dev ifb-$WAN
+    LAN=ifb-$WAN
+elif [ "$DOWNSHAPING_METHOD" = "lan" ]; then
+    # No additional setup needed for direct shaping on LAN interface
+    :
+else
+    echo "Invalid downstream shaping method: $DOWNSHAPING_METHOD"
+    exit 1
 fi
-
 
 cat <<EOF
 
@@ -553,6 +588,8 @@ fi
 tc class add dev "$DEV" parent 1: classid 1:1 hfsc ls m2 "${RATE}kbit" ul m2 "${RATE}kbit"
 
 
+
+
 gameburst=$((gamerate*10))
 if [ $gameburst -gt $((RATE*97/100)) ] ; then
     gameburst=$((RATE*97/100));
@@ -640,6 +677,19 @@ case $useqdisc in
 
 esac
 
+if [ "$DOWNSHAPING_METHOD" = "ctinfo" ] && [ "$DIR" = "lan" ]; then
+    # Apply the filters on the IFB interface's egress
+    tc filter add dev $DEV parent 1: protocol ip prio 1 u32 match ip dsfield 0xb8 0xfc classid 1:11 # ef (46)
+    tc filter add dev $DEV parent 1: protocol ip prio 1 u32 match ip dsfield 0xa0 0xfc classid 1:11 # cs5 (40)
+    tc filter add dev $DEV parent 1: protocol ip prio 1 u32 match ip dsfield 0xc0 0xfc classid 1:11 # cs6 (48)
+    tc filter add dev $DEV parent 1: protocol ip prio 1 u32 match ip dsfield 0xe0 0xfc classid 1:11 # cs7 (56)
+    tc filter add dev $DEV parent 1: protocol ip prio 1 u32 match ip dsfield 0x80 0xfc classid 1:12 # cs4 (32)
+    tc filter add dev $DEV parent 1: protocol ip prio 1 u32 match ip dsfield 0x88 0xfc classid 1:12 # af41 (34)
+    tc filter add dev $DEV parent 1: protocol ip prio 1 u32 match ip dsfield 0x90 0xfc classid 1:12 # af42 (36)
+    tc filter add dev $DEV parent 1: protocol ip prio 1 u32 match ip dsfield 0x40 0xfc classid 1:14 # cs2 (16)
+    tc filter add dev $DEV parent 1: protocol ip prio 1 u32 match ip dsfield 0x20 0xfc classid 1:15 # cs1 (8)
+    tc filter add dev $DEV parent 1: protocol ip prio 1 u32 match ip dsfield 0x00 0xfc classid 1:13 # none (0)
+fi
 
 echo "adding fq_codel qdisc for non-game traffic"
 for i in 12 13 14 15; do 
@@ -653,7 +703,6 @@ done
 setqdisc $WAN $UPRATE $GAMEUP $gameqdisc wan
 
 setqdisc $LAN $DOWNRATE $GAMEDOWN $gameqdisc lan
-
 
 echo "DONE!"
 
