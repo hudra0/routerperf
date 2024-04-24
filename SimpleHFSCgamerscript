@@ -5,7 +5,7 @@ STOP=99
 
 USE_PROCD=1
 
-REQUIRED_PACKAGES="kmod-sched ip-full kmod-veth tc-full kmod-netem"
+REQUIRED_PACKAGES="kmod-sched ip-full kmod-veth tc-full kmod-netem kmod-sched-ctinfo"
 SCRIPT_URL="https://raw.githubusercontent.com/hudra0/routerperf/master/SimpleHFSCgamerscript.sh"
 HOTPLUG_SCRIPT_URL="https://raw.githubusercontent.com/hudra0/routerperf/master/13-SimpleHFSCGamerScriptHotplug"
 NFT_SCRIPT_URL="https://raw.githubusercontent.com/hudra0/routerperf/master/dscptag.nft"
@@ -70,9 +70,9 @@ download_scripts() {
 }
 
 configure_network() {
-    USEVETHDOWN=$(sed -n 's/^USEVETHDOWN=\([^#]*\).*/\1/p' /etc/SimpleHFSCgamerscript.sh | tr -d ' ')
+    DOWNSHAPING_METHOD=$(sed -n 's/^DOWNSHAPING_METHOD=\([^#]*\).*/\1/p' /etc/SimpleHFSCgamerscript.sh | tr -d ' "')
 
-    if [ "$USEVETHDOWN" = "yes" ]; then
+    if [ "$DOWNSHAPING_METHOD" = "veth" ]; then
         echo "Configuring veth interface..."
         
         # Configure the veth interface
@@ -134,17 +134,23 @@ stop_service() {
 
     ## Delete old qdiscs and veth devices, reload network and firewall services
 
-    USEVETHDOWN=$(sed -n 's/^USEVETHDOWN=\([^#]*\).*/\1/p' /etc/SimpleHFSCgamerscript.sh | tr -d ' ')
+    DOWNSHAPING_METHOD=$(sed -n 's/^DOWNSHAPING_METHOD=\([^#]*\).*/\1/p' /etc/SimpleHFSCgamerscript.sh | tr -d ' "')
     WAN=$(awk -F'=' '/^WAN=/ {sub(/#.*/,"",$2); gsub(/"| /,"",$2); print $2; exit}' /etc/SimpleHFSCgamerscript.sh)
     LAN=$(awk -F'=' '/^LAN=/ {sub(/#.*/,"",$2); gsub(/"| /,"",$2); print $2; exit}' /etc/SimpleHFSCgamerscript.sh)
 
-    if [ "$USEVETHDOWN" = "yes" ]; then
+    if [ "$DOWNSHAPING_METHOD" = "veth" ]; then
         LAN="lanveth"
     fi
 
     ## Delete the old qdiscs created by the script
     tc qdisc del dev $LAN root > /dev/null 2>&1
     tc qdisc del dev $WAN root > /dev/null 2>&1
+    tc qdisc del dev ifb-$WAN root > /dev/null 2>&1
+    tc qdisc del dev $WAN ingress > /dev/null 2>&1 
+
+    # Remove IFB interface
+    ip link del ifb-$WAN 2>/dev/null
+
 
     ## Delete veth devices
  if
