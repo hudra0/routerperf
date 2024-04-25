@@ -5,7 +5,7 @@ STOP=99
 
 USE_PROCD=1
 
-REQUIRED_PACKAGES="kmod-sched ip-full kmod-veth tc-full kmod-netem kmod-sched-ctinfo"
+REQUIRED_PACKAGES="kmod-sched ip-full kmod-veth tc-full kmod-netem kmod-sched-ctinfo kmod-ifb"
 SCRIPT_URL="https://raw.githubusercontent.com/hudra0/routerperf/master/SimpleHFSCgamerscript.sh"
 HOTPLUG_SCRIPT_URL="https://raw.githubusercontent.com/hudra0/routerperf/master/13-SimpleHFSCGamerScriptHotplug"
 NFT_SCRIPT_URL="https://raw.githubusercontent.com/hudra0/routerperf/master/dscptag.nft"
