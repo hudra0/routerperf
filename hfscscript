@@ -1,3 +1,6 @@
+config global 'global'
+	option enabled '1'
+
 #config rule 'cod1'
 #	option name 'cod1'
 #	option proto 'udp'
