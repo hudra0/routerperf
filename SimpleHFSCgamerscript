@@ -106,8 +106,7 @@ start_service() {
     /etc/SimpleHFSCgamerscript.sh    
     configure_network
     /etc/init.d/firewall reload
-    uci set hfscscript.global.enabled='1'
-    uci commit hfscscript
+    sed -i "s/\(option enabled\).*/\1 '1'/" /etc/config/hfscscript
     echo "Service started" | logger -t SimpleHFSCgamerscript    
     /etc/init.d/SimpleHFSCgamerscript enable     
 }
@@ -115,8 +114,7 @@ start_service() {
 stop_service() {
     echo "Stopping service SimpleHFSCgamerscript..."
     /etc/init.d/SimpleHFSCgamerscript disable
-    uci set hfscscript.global.enabled='0'
-    uci commit hfscscript    
+    sed -i "s/\(option enabled\).*/\1 '0'/" /etc/config/hfscscript  
     ## Delete files
     rm -f /etc/hotplug.d/iface/13-SimpleHFSCGamerScriptHotplug
     rm -f /usr/share/nftables.d/ruleset-post/dscptag.nft
