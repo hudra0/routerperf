@@ -3,7 +3,6 @@
 ##############################
 # General settings
 ##############################
-
 # "atm" for old-school DSL, "DOCSIS" for cable modem, or "other" for anything else
 LINKTYPE="ethernet" 
 WAN=eth1 # Change this to your WAN device name
@@ -11,12 +10,12 @@ LAN=eth0 # Change to your LAN device if you don't use veth/bridge, leave it alon
 DOWNRATE=90000 # Change this to about 80% of your download speed (in kbps)
 UPRATE=45000 # Change this to your kbps upload speed
 OH=44 # Number of bytes of Overhead on your line
+PRESERVE_CONFIG_FILES="yes"  # Set to "yes" to preserve, "no" to ignore during sysupgrade
 
 ##############################
 # Downstream shaping method
 ##############################
-DOWNSHAPING_METHOD="ctinfo" # Options: "veth", "ctinfo", "lan"
-
+DOWNSHAPING_METHOD="ctinfo" # Options: "veth", "ctinfo", "lan",
 ## "ctinfo"  Uses connection tracking information to restore DSCP markings on incoming packets
 ## "veth" Utilizes a virtual Ethernet pair to control incoming traffic
 ## "lan" Applies traffic shaping directly on the LAN interface, (ideal) for environments with a single interface directed towards the LAN. 
@@ -29,7 +28,6 @@ LANBR=br-lan # LAN bridge interface name, only relevant if USEVETHDOWN is set to
 ##############################
 # Performance settings
 ##############################
-
 BWMAXRATIO=20 ## prevent ack floods by limiting download to at most
 	      ## upload times this amount... ratio somewhere between
 	      ## 10 and 20 probably optimal. we down-prioritize
@@ -41,10 +39,8 @@ if [ $((DOWNRATE > UPRATE*BWMAXRATIO)) -eq 1 ]; then
 fi
 
 ## how many kbps of UDP upload and download do you need for your games across all gaming machines? 
-
 ## you can tune these yourself, but a good starting point is this formula. this script will not work for UPRATE less than about
 ## 600kbps or downrate less than about 1000kbps
-
 GAMEUP=$((UPRATE*15/100+400))
 GAMEDOWN=$((DOWNRATE*15/100+400))
 
@@ -52,54 +48,86 @@ GAMEDOWN=$((DOWNRATE*15/100+400))
 #GAMEUP=400
 #GAMEDOWN=800
 
-
 ##############################
 # Qdisc selection
 ##############################
-
-## Right now there are four possible leaf qdiscs: pfifo, red,
-## fq_codel, or netem. If you use netem it's so you can intentionally
+## Right now there are six possible leaf qdiscs: pfifo, bfifo, red,
+## fq_codel, cake or netem. If you use netem it's so you can intentionally
 ## add delay to your packets, set netemdelayms to the number of ms you
 ## want to add each direction. Our default is pfifo it is reported to
 ## be the best for use in the realtime queue
-
-gameqdisc="pfifo"
+gameqdisc="bfifo"
 
 #gameqdisc="netem"
 
 ##############################
+# General Qdisc Parameters
+##############################
+# Maximum delay we aim to keep below for game packets after burst
+# Used by pfifo, bfifo, and red qdiscs
+MAXDEL=24 # Milliseconds
+          # 10-25 is good 1 clock tick at 64Hz is ~16ms
+
+##############################
 # pfifo Qdisc Settings
 ##############################
-
-# pfifo (Packet FIFO) is utilized for maintaining low latency and minimal packet loss,
-# particularly suited for real-time applications like gaming. It operates by queuing packets
+# pfifo (Packet FIFO) operates by queuing packets
 # in a first-in-first-out manner without any packet classification, ensuring fairness
 # and simplicity in packet delivery.
-
 PFIFOMIN=5 ## Minimum number of packets in pfifo
 PACKETSIZE=450 # Bytes per game packet avg
-MAXDEL=25 # Ms we try to keep max delay below for game packets after burst
 
 ##############################
 # netem Qdisc Settings (Optional)
 ##############################
-
 # netem (Network Emulator) is a tool for testing network conditions by simulating
 # latency, packet loss, jitter, and other network phenomena. It's primarily used
 # for testing and is not recommended for active gaming sessions as it intentionally
 # introduces delay and variability to mimic different network conditions.
-
-netemdelayms="1"
+netemdelayms="30"
 netemjitterms="7"
 netemdist="normal"
-
 pktlossp="none" # set to "none" for no packet loss, or use a fraction
 		# like 0.015 for 1.5% packet loss in the realtime UDP
 		# streams
 
+##############################
+# cake Qdisc Settings
+##############################
+# If a variable is left empty "", the corresponding setting will not be passed to Cake.
+# Use either COMMON_LINK_PRESETS or a combination of OVERHEAD, MPU, ETHER_VLAN_KEYWORD, and LINK_COMPENSATION.
+# If OVERHEAD, MPU, ETHER_VLAN_KEYWORD, or LINK_COMPENSATION are set, they will override the COMMON_LINK_PRESETS setting.
+# For more information about Cake's configuration options, refer to the Cake manpage: https://man7.org/linux/man-pages/man8/tc-cake.8.html
+COMMON_LINK_PRESETS="ethernet"  # Predefined settings for common link types.
+                                # Options: "raw" | "conservative" | "ethernet" | "docsis" | "pppoe-ptm" | "bridged-ptm" | "pppoa-vcmux" | "pppoa-llc" | "pppoe-vcmux" | "pppoe-llcsnap" | "bridged-vcmux" | "bridged-llcsnap" | "ipoa-vcmux" | "ipoa-llcsnap"
+OVERHEAD=""           # Additional overhead per packet in bytes. Valid values: -64 to 256.
+MPU=""                # Minimum packet size in bytes. Valid values: 0 to 256.
+LINK_COMPENSATION=""  # Compensation for specific link types. Options: "atm" | "ptm" | "noatm"
+                      # "atm": Asynchronous Transfer Mode, commonly used with ADSL.
+                      # "ptm": Packet Transfer Mode, commonly used with VDSL2.
+                      # "noatm": No compensation.
+ETHER_VLAN_KEYWORD=""  # Number of VLAN tags in the Ethernet frame. Valid values: 1 to 3.
+PRIORITY_QUEUE_INGRESS="diffserv4"  # Priority queues for ingress traffic. Options: "besteffort" | "diffserv3" | "diffserv4" | "diffserv8"
+PRIORITY_QUEUE_EGRESS="diffserv4"   # Priority queues for egress traffic. Options: "besteffort" | "diffserv3" | "diffserv4" | "diffserv8"
+HOST_ISOLATION="yes"  # Enable host isolation. Options: "yes" | "no"
+                      # Prevents a single host with many connections from claiming all available bandwidth.
+NAT_INGRESS="yes"  # Enable NAT for ingress traffic. Options: "yes" | "no"
+NAT_EGRESS="yes"   # Enable NAT for egress traffic. Options: "yes" | "no"
+WASH_INGRESS="no"  # Clear incoming DSCP markings. Options: "yes" | "no"
+WASH_EGRESS="no"   # Clear outgoing DSCP markings. Options: "yes" | "no"
+ACK_FILTER_EGRESS="auto"  # Options: "yes" | "no" | "auto"
+                          # "auto": Cake decides based on the connection asymmetry.
+RTT="25"  # Expected average packet round-trip time in milliseconds. Valid values: 1 to 1000.
+AUTORATE_INGRESS="no"  # Automatic bandwidth adjustment for ingress traffic. Options: "yes" | "no"
+                       # Enables Cake's automatic bandwidth adjustment for ingress traffic.
+                       # For proper functionality, the downlink bandwidth must be specified in "DOWNRATE".
+                       # This option is most useful for mobile connections where the quality frequently changes.
+EXTRA_PARAMETERS_INGRESS=""  # Additional parameters for ingress traffic. For experts.
+EXTRA_PARAMETERS_EGRESS=""   # Additional parameters for egress traffic. For experts.
+
 #############################
 
-if [ $gameqdisc != "fq_codel" -a $gameqdisc != "red" -a $gameqdisc != "pfifo" -a $gameqdisc != "netem" ]; then
+if [ $gameqdisc != "fq_codel" -a $gameqdisc != "red" -a $gameqdisc != "pfifo" -a $gameqdisc != "bfifo" -a $gameqdisc != "cake" -a $gameqdisc != "netem" ]; then
     echo "Other qdiscs are not tested and do not work on OpenWrt yet anyway, reverting to red"
     gameqdisc="red"
 fi
@@ -108,14 +136,12 @@ fi
 ##############################
 # Port/IP settings for traffic categorization
 ##############################
-
 ## Help the system prioritize your gaming by telling it what is bulk
 ## traffic ... define a list of udp and tcp ports used for bulk
 ## traffic such as torrents. By default we include the transmission
 ## torrent client default port 51413 and the default TCP ports for
 ## bittorrent. Use comma separated values or ranges A:B as shown. Set
 ## your torrent client to use a known port and include it here
-
 UDPBULKPORT="51413"
 TCPBULKPORT="51413,6881-6889"
 VIDCONFPORTS="10000,3478-3479,8801-8802,19302-19309,5938,53"
@@ -141,13 +167,36 @@ UDP_RATE_LIMIT_ENABLED="yes"  # Set to "yes" to enable or "no" to disable
 ##############################
 #  Traffic washing settings
 ##############################
-
 WASHDSCPUP="yes"
 WASHDSCPDOWN="yes"
 
 ######################################## CUSTOMIZATIONS GO ABOVE THIS LINE ###############################################
 ##########################################################################################################################
 
+##############################
+# Function to preserve configuration files
+##############################
+preserve_config_files() {
+    if [ "$PRESERVE_CONFIG_FILES" = "yes" ]; then
+        {
+            echo "/etc/SimpleHFSCgamerscript.sh"
+            echo "/etc/init.d/SimpleHFSCgamerscript"
+            echo "/etc/hotplug.d/iface/13-SimpleHFSCGamerScriptHotplug" 
+        } | while read LINE; do
+            grep -qxF "$LINE" /etc/sysupgrade.conf || echo "$LINE" >> /etc/sysupgrade.conf
+        done
+        echo "Config files have been added to sysupgrade.conf for preservation."
+    else
+        echo "Preservation of config files is disabled."
+             
+        # Remove the config files from sysupgrade.conf if they exist
+        sed -i '\|/etc/SimpleHFSCgamerscript.sh|d' /etc/sysupgrade.conf
+        sed -i '\|/etc/init.d/SimpleHFSCgamerscript|d' /etc/sysupgrade.conf
+        sed -i '\|/etc/hotplug.d/iface/13-SimpleHFSCGamerScriptHotplug|d' /etc/sysupgrade.conf
+    fi
+}
+
+preserve_config_files
 
 ##############################
 # Variable checks and dynamic rule generation
@@ -273,8 +322,8 @@ fi
 # Check if VIDCONFPORTS is set
 if [ -n "$VIDCONFPORTS" ]; then
     vidconfports_rules="\
-ip protocol udp udp dport \$vidconfports ip dscp set cs4 counter
-        ip6 nexthdr udp udp dport \$vidconfports ip6 dscp set cs4 counter"
+ip protocol udp udp dport \$vidconfports ip dscp set af42 counter
+        ip6 nexthdr udp udp dport \$vidconfports ip6 dscp set af42 counter"
 else
     vidconfports_rules="# VIDCONFPORTS Port rules disabled, no ports defined."
 fi
@@ -299,16 +348,16 @@ fi
 # Check if LOWPRIOLAN4 and LOWPRIOLAN6 are set
 if [ -n "$LOWPRIOLAN4" ]; then
     lowpriolan4_rules="\
-ip protocol udp ip daddr \$lowpriolan4 ip dscp set cs2 counter
-        ip protocol udp ip saddr \$lowpriolan4 ip dscp set cs2 counter"
+ip protocol udp ip daddr \$lowpriolan4 ip dscp set cs0 counter
+        ip protocol udp ip saddr \$lowpriolan4 ip dscp set cs0 counter"
 else
     lowpriolan4_rules="# LOWPRIOLAN4 rules disabled, address not defined."
 fi
 
 if [ -n "$LOWPRIOLAN6" ]; then
     lowpriolan6_rules="\
-ip6 nexthdr udp ip6 daddr \$lowpriolan6 ip6 dscp set cs2 counter
-        ip6 nexthdr udp ip6 saddr \$lowpriolan6 ip6 dscp set cs2 counter"
+ip6 nexthdr udp ip6 daddr \$lowpriolan6 ip6 dscp set cs0 counter
+        ip6 nexthdr udp ip6 saddr \$lowpriolan6 ip6 dscp set cs0 counter"
 else
     lowpriolan6_rules="# LOWPRIOLAN6 rules disabled, address not defined."
 fi
@@ -316,8 +365,8 @@ fi
 # Check if UDP rate limiting should be applied
 if [ "$UDP_RATE_LIMIT_ENABLED" = "yes" ]; then
     udp_rate_limit_rules="\
-ip protocol udp ip dscp > cs2 add @udp_meter4 {ip saddr . ip daddr . udp sport . udp dport limit rate over 450/second} counter ip dscp set cs2 counter
-        ip6 nexthdr udp ip6 dscp > cs2 add @udp_meter6 {ip6 saddr . ip6 daddr . udp sport . udp dport limit rate over 450/second} counter ip6 dscp set cs2 counter"
+ip protocol udp ip dscp > cs2 add @udp_meter4 {ip saddr . ip daddr . udp sport . udp dport limit rate over 450/second} counter ip dscp set cs0 counter
+        ip6 nexthdr udp ip6 dscp > cs2 add @udp_meter6 {ip6 saddr . ip6 daddr . udp sport . udp dport limit rate over 450/second} counter ip6 dscp set cs0 counter"
 else
     udp_rate_limit_rules="# UDP rate limiting is disabled."
 fi
@@ -435,20 +484,16 @@ table inet dscptag {
         $lowpriolan6_rules
 
         $udp_rate_limit_rules
-
-        #downgrade udp going faster than 450 pps, probably not realtime traffic
-        ip protocol udp ip dscp > cs2 add @udp_meter4 {ip saddr . ip daddr . udp sport . udp dport limit rate over 450/second} counter ip dscp set cs2 counter
-        ip6 nexthdr udp ip6 dscp > cs2 add @udp_meter6 {ip6 saddr . ip6 daddr . udp sport . udp dport limit rate over 450/second} counter ip6 dscp set cs2 counter
-
+        
         # down prioritize the first 500ms of tcp packets
-        ip protocol tcp ct bytes < \$first500ms ip dscp < cs4 ip dscp set cs2 counter
+        ip protocol tcp ct bytes < \$first500ms ip dscp < cs4 ip dscp set cs0 counter
 
         # downgrade tcp that has transferred more than 10 seconds worth of packets
         ip protocol tcp ct bytes > \$first10s ip dscp < cs4 ip dscp set cs1 counter
 
         ## tcp with less than 150 pps gets upgraded to cs4
-        ip protocol tcp add @slowtcp4 {ip saddr . ip daddr . tcp sport . tcp dport limit rate 150/second burst 150 packets } ip dscp set cs4 counter
-        ip6 nexthdr tcp add @slowtcp6 {ip6 saddr . ip6 daddr . tcp sport . tcp dport limit rate 150/second burst 150 packets} ip6 dscp set cs4 counter
+        ip protocol tcp add @slowtcp4 {ip saddr . ip daddr . tcp sport . tcp dport limit rate 150/second burst 150 packets } ip dscp set af42 counter
+        ip6 nexthdr tcp add @slowtcp6 {ip6 saddr . ip6 daddr . tcp sport . tcp dport limit rate 150/second burst 150 packets} ip6 dscp set af42 counter
 
 ${DYNAMIC_RULES}
 
@@ -546,6 +591,7 @@ your gaming, and there is NOTHING that your router can do about it.
 EOF
 
 
+if [ "$gameqdisc" != "cake" ]; then
 setqdisc () {
 DEV=$1
 RATE=$2
@@ -661,8 +707,12 @@ case $useqdisc in
     ;;
 
     "pfifo")
-	tc qdisc add dev "$DEV" parent 1:11 handle 10: pfifo limit $((PFIFOMIN+MAXDEL*RATE/8/PACKETSIZE))
+    	tc qdisc add dev "$DEV" parent 1:11 handle 10: pfifo limit $((PFIFOMIN+MAXDEL*RATE/8/PACKETSIZE))
 	;;
+    "bfifo")
+	tc qdisc add dev "$DEV" parent 1:11 handle 10: bfifo limit $((MAXDEL * gamerate / 8))
+ 	#tc qdisc add dev "$DEV" parent 1:11 handle 10: bfifo limit $((MAXDEL * RATE / 8))   
+	;;    
     "red")
 	tc qdisc add dev "$DEV" parent 1:11 handle 10: red limit 150000 min $REDMIN max $REDMAX avpkt 500 bandwidth ${RATE}kbit  probability 1.0
 	## send game packets to 10:, they're all treated the same
@@ -698,11 +748,144 @@ done
 
 
 }
+fi
 
-
-setqdisc $WAN $UPRATE $GAMEUP $gameqdisc wan
-
-setqdisc $LAN $DOWNRATE $GAMEDOWN $gameqdisc lan
+if [ "$gameqdisc" = "cake" ]; then
+    tc qdisc del dev "$WAN" root > /dev/null 2>&1
+    
+    EGRESS_CAKE_OPTS="bandwidth ${UPRATE}kbit"
+    
+    if [ "$PRIORITY_QUEUE_EGRESS" != "" ]; then
+        EGRESS_CAKE_OPTS="$EGRESS_CAKE_OPTS $PRIORITY_QUEUE_EGRESS"
+    fi
+    
+    if [ "$HOST_ISOLATION" = "yes" ]; then
+        EGRESS_CAKE_OPTS="$EGRESS_CAKE_OPTS dual-srchost"
+    fi
+    
+    if [ "$NAT_EGRESS" = "yes" ]; then
+        EGRESS_CAKE_OPTS="$EGRESS_CAKE_OPTS nat"
+    else
+        EGRESS_CAKE_OPTS="$EGRESS_CAKE_OPTS nonat"
+    fi
+    
+    if [ "$WASH_EGRESS" = "yes" ]; then
+        EGRESS_CAKE_OPTS="$EGRESS_CAKE_OPTS wash"
+    else
+        EGRESS_CAKE_OPTS="$EGRESS_CAKE_OPTS nowash"
+    fi
+    
+    if [ "$ACK_FILTER_EGRESS" = "yes" ] || { [ "$ACK_FILTER_EGRESS" = "auto" ] && [ $((DOWNRATE / UPRATE)) -ge 15 ]; }; then
+        EGRESS_CAKE_OPTS="$EGRESS_CAKE_OPTS ack-filter"
+    else
+        EGRESS_CAKE_OPTS="$EGRESS_CAKE_OPTS no-ack-filter"
+    fi
+    
+    if [ -n "$RTT" ]; then
+        EGRESS_CAKE_OPTS="$EGRESS_CAKE_OPTS rtt ${RTT}ms"
+    fi
+    
+    if [ -n "$COMMON_LINK_PRESETS" ]; then
+        EGRESS_CAKE_OPTS="$EGRESS_CAKE_OPTS $COMMON_LINK_PRESETS"
+    fi
+    
+    if [ -n "$ETHER_VLAN_KEYWORD" ]; then
+        i=1
+        while [ $i -le $ETHER_VLAN_KEYWORD ]; do
+            EGRESS_CAKE_OPTS="$EGRESS_CAKE_OPTS ether-vlan"
+            i=$((i + 1))
+        done
+    fi
+    
+    if [ -n "$LINK_COMPENSATION" ]; then
+        EGRESS_CAKE_OPTS="$EGRESS_CAKE_OPTS $LINK_COMPENSATION"
+    else
+        EGRESS_CAKE_OPTS="$EGRESS_CAKE_OPTS noatm"
+    fi
+    
+    if [ -n "$OVERHEAD" ]; then
+        EGRESS_CAKE_OPTS="$EGRESS_CAKE_OPTS overhead $OVERHEAD"
+    fi
+    
+    if [ -n "$MPU" ]; then
+        EGRESS_CAKE_OPTS="$EGRESS_CAKE_OPTS mpu $MPU"
+    fi
+    
+    if [ -n "$EXTRA_PARAMETERS_EGRESS" ]; then
+        EGRESS_CAKE_OPTS="$EGRESS_CAKE_OPTS $EXTRA_PARAMETERS_EGRESS"
+    fi
+    
+    tc qdisc add dev $WAN root cake $EGRESS_CAKE_OPTS
+    
+    tc qdisc del dev "$LAN" root > /dev/null 2>&1
+    
+    INGRESS_CAKE_OPTS="bandwidth ${DOWNRATE}kbit"
+    
+    if [ "$AUTORATE_INGRESS" = "yes" ]; then
+        INGRESS_CAKE_OPTS="$INGRESS_CAKE_OPTS autorate-ingress"
+    fi
+    
+    if [ "$PRIORITY_QUEUE_INGRESS" != "" ]; then
+        INGRESS_CAKE_OPTS="$INGRESS_CAKE_OPTS $PRIORITY_QUEUE_INGRESS"
+    fi
+    
+    if [ "$HOST_ISOLATION" = "yes" ]; then
+        INGRESS_CAKE_OPTS="$INGRESS_CAKE_OPTS dual-dsthost"
+    fi
+    
+    if [ "$NAT_INGRESS" = "yes" ] && [ "$DOWNSHAPING_METHOD" != "veth" ]; then
+        INGRESS_CAKE_OPTS="$INGRESS_CAKE_OPTS nat"
+    else
+        INGRESS_CAKE_OPTS="$INGRESS_CAKE_OPTS nonat"
+    fi
+    
+    if [ "$WASH_INGRESS" = "yes" ]; then
+        INGRESS_CAKE_OPTS="$INGRESS_CAKE_OPTS wash"
+    else
+        INGRESS_CAKE_OPTS="$INGRESS_CAKE_OPTS nowash"
+    fi
+    
+    INGRESS_CAKE_OPTS="$INGRESS_CAKE_OPTS ingress"
+    
+    if [ -n "$RTT" ]; then
+        INGRESS_CAKE_OPTS="$INGRESS_CAKE_OPTS rtt ${RTT}ms"
+    fi
+    
+    if [ -n "$COMMON_LINK_PRESETS" ]; then
+        INGRESS_CAKE_OPTS="$INGRESS_CAKE_OPTS $COMMON_LINK_PRESETS"
+    fi
+    
+    if [ -n "$ETHER_VLAN_KEYWORD" ]; then
+        i=1
+        while [ $i -le $ETHER_VLAN_KEYWORD ]; do
+            INGRESS_CAKE_OPTS="$INGRESS_CAKE_OPTS ether-vlan"
+            i=$((i + 1))
+        done
+    fi
+    
+    if [ -n "$LINK_COMPENSATION" ]; then
+        INGRESS_CAKE_OPTS="$INGRESS_CAKE_OPTS $LINK_COMPENSATION"
+    else
+        INGRESS_CAKE_OPTS="$INGRESS_CAKE_OPTS noatm"
+    fi
+    
+    if [ -n "$OVERHEAD" ]; then
+        INGRESS_CAKE_OPTS="$INGRESS_CAKE_OPTS overhead $OVERHEAD"
+    fi
+    
+    if [ -n "$MPU" ]; then
+        INGRESS_CAKE_OPTS="$INGRESS_CAKE_OPTS mpu $MPU"
+    fi
+    
+    if [ -n "$EXTRA_PARAMETERS_INGRESS" ]; then
+        INGRESS_CAKE_OPTS="$INGRESS_CAKE_OPTS $EXTRA_PARAMETERS_INGRESS"
+    fi
+    
+    tc qdisc add dev $LAN root cake $INGRESS_CAKE_OPTS
+else
+    setqdisc $WAN $UPRATE $GAMEUP $gameqdisc wan
+    setqdisc $LAN $DOWNRATE $GAMEDOWN $gameqdisc lan
+fi
 
 echo "DONE!"
 
