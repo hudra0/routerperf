@@ -155,10 +155,12 @@ WASHDSCPDOWN="yes"
 
 # Function to calculate different ACK rates based on the existing ACKRATE variable
 calculate_ack_rates() {
-    SLOWACKRATE=$ACKRATE # Direkte Verwendung von ACKRATE für slow4ack und med4ack
-    MEDACKRATE=$ACKRATE
-    FASTACKRATE=$(($ACKRATE * 10))
-    XFSTACKRATE=$(($ACKRATE * 100))
+    if [ -n "$ACKRATE" ] && [ "$ACKRATE" -gt 0 ]; then
+        SLOWACKRATE=$ACKRATE
+        MEDACKRATE=$ACKRATE
+        FASTACKRATE=$(($ACKRATE * 10))
+        XFSTACKRATE=$(($ACKRATE * 100))
+    fi
 }
 
 # Call the function to perform the ACK rates calculations
