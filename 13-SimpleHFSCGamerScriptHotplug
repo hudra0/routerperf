@@ -1,7 +1,13 @@
 #!/bin/sh
 
 [ -n "$DEVICE" ] || exit 0
-[ "$ACTION" = ifup ] &&  {                                                                            
-    echo y | /etc/SimpleHFSCgamerscript.sh
-    logger -t SimpleHFSCgamerscript "Reloading SimpleHFSCgamerscript.sh due to $ACTION of $INTERFACE ($DEVICE)"
+[ "$ACTION" = ifup ] && {
+    enabled=$(uci get hfscscript.global.enabled 2>/dev/null)
+    if [ "$enabled" = "1" ]; then
+        /etc/init.d/SimpleHFSCgamerscript enable
+        /etc/init.d/SimpleHFSCgamerscript start
+        logger -t SimpleHFSCgamerscript "Reloading SimpleHFSCgamerscript.sh due to $ACTION of $INTERFACE ($DEVICE)"
+    else
+        logger -t SimpleHFSCgamerscript "SimpleHFSCgamerscript is disabled in the configuration. Not executing the script."
+    fi
 }
