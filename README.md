@@ -26,7 +26,7 @@ SimpleHFSCgamerscript is a shell script designed to set up highly responsive QoS
 1. Log into your OpenWrt router and download the scripts to your router with this command:
 
 ```
-wget -O /etc/init.d/SimpleHFSCgamerscript https://raw.githubusercontent.com/hudra0/routerperf/dev/SimpleHFSCgamerscript && chmod +x /etc/init.d/SimpleHFSCgamerscript && wget -O /etc/SimpleHFSCgamerscript.sh https://raw.githubusercontent.com/hudra0/routerperf/dev/SimpleHFSCgamerscript.sh && chmod +x /etc/SimpleHFSCgamerscript.sh
+wget -O /etc/init.d/SimpleHFSCgamerscript https://raw.githubusercontent.com/hudra0/routerperf/master/SimpleHFSCgamerscript && chmod +x /etc/init.d/SimpleHFSCgamerscript && wget -O /etc/SimpleHFSCgamerscript.sh https://raw.githubusercontent.com/hudra0/routerperf/master/SimpleHFSCgamerscript.sh && chmod +x /etc/SimpleHFSCgamerscript.sh
 ```   
   This command does the following:
 - Downloads the init script to `/etc/init.d/SimpleHFSCgamerscript` and makes it executable.
