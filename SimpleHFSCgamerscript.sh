@@ -3,7 +3,6 @@
 ##############################
 # General settings
 ##############################
-
 # "atm" for old-school DSL, "DOCSIS" for cable modem, or "other" for anything else
 LINKTYPE="ethernet" 
 WAN=eth1 # Change this to your WAN device name
@@ -11,6 +10,7 @@ LAN=eth0 # Change to your LAN device if you don't use veth/bridge, leave it alon
 DOWNRATE=90000 # Change this to about 80% of your download speed (in kbps)
 UPRATE=45000 # Change this to your kbps upload speed
 OH=44 # Number of bytes of Overhead on your line
+PRESERVE_CONFIG_FILES="yes"  # Set to "yes" to preserve, "no" to ignore during sysupgrade
 
 ##############################
 # Downstream shaping method
@@ -148,6 +148,30 @@ WASHDSCPDOWN="yes"
 ######################################## CUSTOMIZATIONS GO ABOVE THIS LINE ###############################################
 ##########################################################################################################################
 
+##############################
+# Function to preserve configuration files
+##############################
+preserve_config_files() {
+    if [ "$PRESERVE_CONFIG_FILES" = "yes" ]; then
+        {
+            echo "/etc/SimpleHFSCgamerscript.sh"
+            echo "/etc/init.d/SimpleHFSCgamerscript"
+            echo "/etc/hotplug.d/iface/13-SimpleHFSCGamerScriptHotplug" 
+        } | while read LINE; do
+            grep -qxF "$LINE" /etc/sysupgrade.conf || echo "$LINE" >> /etc/sysupgrade.conf
+        done
+        echo "Config files have been added to sysupgrade.conf for preservation."
+    else
+        echo "Preservation of config files is disabled."
+             
+        # Remove the config files from sysupgrade.conf if they exist
+        sed -i '\|/etc/SimpleHFSCgamerscript.sh|d' /etc/sysupgrade.conf
+        sed -i '\|/etc/init.d/SimpleHFSCgamerscript|d' /etc/sysupgrade.conf
+        sed -i '\|/etc/hotplug.d/iface/13-SimpleHFSCGamerScriptHotplug|d' /etc/sysupgrade.conf
+    fi
+}
+
+preserve_config_files
 
 ##############################
 # Variable checks and dynamic rule generation
