@@ -372,9 +372,7 @@ To completely remove SimpleHFSCgamerscript from your OpenWrt router:
 
 3. Remove the script files:
 
-`rm /etc/init.d/SimpleHFSCgamerscript` 
-`rm /etc/SimpleHFSCgamerscript.sh` 
-`rm /etc/config/hfscscript`
+`rm /etc/init.d/SimpleHFSCgamerscript && rm /etc/SimpleHFSCgamerscript.sh && rm /etc/config/hfscscript`
 
 4. Reboot your router to clear any remaining settings:
 `reboot`
