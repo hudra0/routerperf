@@ -100,9 +100,36 @@ configure_network() {
     echo "Network configuration successfully completed."
 }
 
+migrate_config() {
+    CONFIG_FILE="/etc/config/hfscscript"
+
+    # Function to add the global enabled option if it does not exist
+    if ! grep -q "config global 'global'" $CONFIG_FILE; then
+        echo "Adding global configuration section..."
+        sed -i '1i\
+config global '\''global'\''\n    option enabled '\''1'\''\n' $CONFIG_FILE
+        echo "Global configuration section added."
+    else
+        echo "Global configuration section already exists."
+    fi
+
+    # Ensure the enabled option is present in the global section
+    if ! grep -q "option enabled" $CONFIG_FILE; then
+        echo "Adding enabled option to global section..."
+        sed -i "/config global 'global'/a\\
+    option enabled '1'
+" $CONFIG_FILE
+        echo "Enabled option added."
+    else
+        echo "Enabled option already exists."
+    fi
+}
+
+
 start_service() {
     install_packages
     download_scripts
+    migrate_config    
     /etc/SimpleHFSCgamerscript.sh    
     configure_network
     /etc/init.d/firewall reload
@@ -114,7 +141,7 @@ start_service() {
 stop_service() {
     echo "Stopping service SimpleHFSCgamerscript..."
     /etc/init.d/SimpleHFSCgamerscript disable
-    sed -i "s/\(option enabled\).*/\1 '0'/" /etc/config/hfscscript  
+    sed -i "s/\(option enabled\).*/\1 '0'/" /etc/config/hfscscript
     ## Delete files
     rm -f /etc/hotplug.d/iface/13-SimpleHFSCGamerScriptHotplug
     rm -f /usr/share/nftables.d/ruleset-post/dscptag.nft
