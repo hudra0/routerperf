@@ -59,8 +59,6 @@ wget -O /etc/init.d/SimpleHFSCgamerscript https://raw.githubusercontent.com/hudr
 	LOWPRIOLAN6="fd90::129a" # Add the IPv6 addresses of low-priority devices here
 ```
 
--  edit /etc/hfscscript to add any additional rules you want to use for custom DSCP tagging - examples are in the config
-
 6. To get everything rolling, enable and start the service with:
     
     
@@ -74,6 +72,8 @@ service SimpleHFSCgamerscript start
 ```
     
 You can also do this via LuCI (System/Startup).
+
+-  edit /etc/hfscscript to add any additional rules you want to use for custom DSCP tagging - examples are in the config
 
 7. To make sure everything's running smoothly, you can check the service status:
     
