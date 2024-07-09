@@ -74,7 +74,7 @@ service SimpleHFSCgamerscript start
     
 You can also do this via LuCI (System/Startup).
 
--  edit /etc/hfscscript to add any additional rules you want to use for custom DSCP tagging - examples are in the config
+-  edit /etc/config/hfscscript to add any additional rules you want to use for custom DSCP tagging - examples are in the config
 
 7. To make sure everything's running smoothly, you can check the service status:
     
