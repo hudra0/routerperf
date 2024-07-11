@@ -232,8 +232,7 @@ check_and_update_config
 
 create_nft_rule() {
     local config="$1"
-    local src_ip src_port dest_ip dest_port proto class counter
-
+    local src_ip src_port dest_ip dest_port proto class counter name
     config_get src_ip "$config" src_ip
     config_get src_port "$config" src_port
     config_get dest_ip "$config" dest_ip
@@ -241,10 +240,10 @@ create_nft_rule() {
     config_get proto "$config" proto
     config_get class "$config" class
     config_get_bool counter "$config" counter 0
+    config_get name "$config" name
 
-    # Convert class and proto to lowercase
+    # Convert class to lowercase
     class=$(echo "$class" | tr 'A-Z' 'a-z')
-    proto=$(echo "$proto" | tr 'A-Z' 'a-z')
 
     # Ensure class is not empty
     if [ -z "$class" ]; then
@@ -254,19 +253,54 @@ create_nft_rule() {
 
     # Initialize rule string
     local rule_cmd=""
-    local proto_prefix="$proto"
+
+    # Function to handle multiple values
+    handle_multiple_values() {
+        local values="$1"
+        local prefix="$2"
+        local result=""
+        local exclude=0
+        
+        if [ $(echo "$values" | grep -c "!=") -gt 0 ]; then
+            exclude=1
+            values=$(echo "$values" | sed 's/!=//g')
+        fi
+        
+        if [ $(echo "$values" | wc -w) -gt 1 ]; then
+            if [ $exclude -eq 1 ]; then
+                result="$prefix != { $(echo $values | tr ' ' ',') }"
+            else
+                result="$prefix { $(echo $values | tr ' ' ',') }"
+            fi
+        else
+            if [ $exclude -eq 1 ]; then
+                result="$prefix != $values"
+            else
+                result="$prefix $values"
+            fi
+        fi
+        echo "$result"
+    }
+
+    # Handle multiple protocols
+    if [ -n "$proto" ]; then
+        rule_cmd="$rule_cmd $(handle_multiple_values "$proto" "meta l4proto")"
+    fi
 
     # Append source IP and port if provided
-    [ -n "$src_ip" ] && rule_cmd="$rule_cmd ip saddr $src_ip "
-    [ -n "$src_port" ] && rule_cmd="$rule_cmd $proto_prefix sport $src_port "
+    [ -n "$src_ip" ] && rule_cmd="$rule_cmd $(handle_multiple_values "$src_ip" "ip saddr")"
+    [ -n "$src_port" ] && rule_cmd="$rule_cmd $(handle_multiple_values "$src_port" "th sport")"
 
     # Append destination IP and port if provided
-    [ -n "$dest_ip" ] && rule_cmd="$rule_cmd ip daddr $dest_ip "
-    [ -n "$dest_port" ] && rule_cmd="$rule_cmd $proto_prefix dport $dest_port "
+    [ -n "$dest_ip" ] && rule_cmd="$rule_cmd $(handle_multiple_values "$dest_ip" "ip daddr")"
+    [ -n "$dest_port" ] && rule_cmd="$rule_cmd $(handle_multiple_values "$dest_port" "th dport")"
 
     # Append class and counter if provided
-    rule_cmd="$rule_cmd ip dscp set $class "
-    [ "$counter" -eq 1 ] && rule_cmd="$rule_cmd counter "
+    rule_cmd="$rule_cmd ip dscp set $class"
+    [ "$counter" -eq 1 ] && rule_cmd="$rule_cmd counter"
+
+    # Add comment if name is provided
+    [ -n "$name" ] && rule_cmd="$rule_cmd comment \"$name\""
 
     # Finalize the rule by removing any extra spaces and adding a semicolon
     rule_cmd=$(echo "$rule_cmd" | sed 's/[ ]*$//')
@@ -280,7 +314,6 @@ create_nft_rule() {
 generate_dynamic_nft_rules() {
     . /lib/functions.sh
     config_load 'hfscscript'
-
     config_foreach create_nft_rule rule
 }
 
